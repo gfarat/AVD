@@ -1,3 +1,28 @@
-Install-Language pt-BR
-Install-Language pt-BR -CopyToSettings
-Set-SystemPreferredUILanguage pt-BR
+<# 
+Author       : Gabriel Farat
+Usage        : Install Language Pack
+#>
+
+try {
+    Install-Language pt-BR -ErrorAction Stop
+    Write-Host "Language pt-BR installed successfully."
+}
+catch {
+    Write-Host "Failed to install language pt-BR: $($_.Exception.Message)"
+}
+
+try {
+    Install-Language pt-BR -CopyToSettings -ErrorAction Stop
+    Write-Host "Language settings copied successfully."
+}
+catch {
+    Write-Host "Failed to copy language settings: $($_.Exception.Message)"
+}
+
+try {
+    Set-SystemPreferredUILanguage pt-BR -ErrorAction Stop
+    Write-Host "System Preferred UI Language set to pt-BR."
+}
+catch {
+    Write-Host "Failed to set System Preferred UI Language: $($_.Exception.Message)"
+}
