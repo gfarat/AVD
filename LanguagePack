@@ -1,0 +1,3 @@
+Install-Language pt-BR
+Install-Language pt-BR -CopyToSettings
+Set-SystemPreferredUILanguage pt-BR
