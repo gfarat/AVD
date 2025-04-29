@@ -1,0 +1,138 @@
+<# 
+Author       : Akash Chawla (adaptado por Gabriel Farat para forçar Teams 2.0 e validar execução como administrador)
+Usage        : Teams Optimization for AVD
+#>
+
+#######################################
+# Teams Optimization for AVD
+#######################################
+
+# Verificar se o script está rodando como administrador
+if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")) {
+    Write-Host "❌ Este script precisa ser executado como administrador. Por favor, reinicie o PowerShell como administrador e tente novamente."
+    exit 1
+}
+
+# Links atualizados oficiais
+$VCRedistributableLink = "https://aka.ms/vs/17/release/vc_redist.x64.exe"
+$WebRTCInstaller = "https://aka.ms/msrdcwebrtcsvc/msi"
+$TeamsBootStrapperUrl = "https://go.microsoft.com/fwlink/?linkid=2243204"
+
+# Função para download com tentativas
+function Safe-DownloadFile {
+    param(
+        [Parameter(Mandatory=$true)][string]$url,
+        [Parameter(Mandatory=$true)][string]$destination,
+        [int]$retryCount = 3
+    )
+
+    $success = $false
+    for ($i = 1; $i -le $retryCount; $i++) {
+        try {
+            Write-Host "Attempt ${i}: Downloading ${url}"
+            Invoke-WebRequest -Uri $url -OutFile $destination -TimeoutSec 60 -ErrorAction Stop
+            Write-Host "Downloaded successfully: $destination"
+            $success = $true
+            break
+        }
+        catch {
+            Write-Host "Attempt ${i} failed to download ${url}: $($_.Exception.Message)"
+            if ($i -lt $retryCount) {
+                Start-Sleep -Seconds 5
+            }
+        }
+    }
+
+    if (-not $success) {
+        throw "Failed to download $url after $retryCount attempts."
+    }
+}
+
+# Função para configurar registros
+function Set-RegKey($registryPath, $registryKey, $registryValue) {
+    try {
+         Write-Host "*** Setting ${registryKey} with value $registryValue ***"
+         New-ItemProperty -Path $registryPath -Name $registryKey -Value $registryValue -PropertyType DWORD -Force -ErrorAction Stop
+    }
+    catch {
+         Write-Host "*** Cannot set registry key ${registryKey}: [$($_.Exception.Message)]"
+    }
+}
+
+# Função principal
+function InstallTeamsOptimizationforAVD($VCRedistributableLink, $WebRTCInstaller, $TeamsBootStrapperUrl) {
+    Begin {
+        $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+        $templateFilePathFolder = "C:\AVDImage"
+        Write-Host "*** Starting AVD Teams Optimization at $((Get-Date).ToUniversalTime()) ***"
+
+        $guid = [guid]::NewGuid().Guid
+        $tempFolder = (Join-Path -Path "C:\temp" -ChildPath $guid)
+
+        if (!(Test-Path -Path $tempFolder)) {
+            New-Item -Path $tempFolder -ItemType Directory -Force | Out-Null
+        }
+        Write-Host "Created temp folder: $tempFolder"
+    }
+
+    Process {
+        try {
+            # Definir chave de registro para Teams em ambiente WVD
+            $registryPath = "HKLM:\SOFTWARE\Microsoft\Teams"
+            if (!(Test-Path $registryPath)) {
+                New-Item -Path "HKLM:\SOFTWARE\Microsoft" -Name "Teams" -Force | Out-Null
+            }
+            Set-RegKey -registryPath $registryPath -registryKey "IsWVDEnvironment" -registryValue 1
+
+            # Instalar Visual C++ Redistributable
+            Write-Host "Installing Visual C++ Redistributable..."
+            $vcRedistPath = Join-Path $tempFolder "vc_redist.x64.exe"
+            Safe-DownloadFile -url $VCRedistributableLink -destination $vcRedistPath
+            Start-Process -FilePath $vcRedistPath -ArgumentList "/install /quiet /norestart /log vcredist.log" -Wait
+
+            # Instalar WebRTC Redirector Service
+            Write-Host "Installing WebRTC Redirector Service..."
+            $webRTCPath = Join-Path $tempFolder "WebRTC.msi"
+            Safe-DownloadFile -url $WebRTCInstaller -destination $webRTCPath
+            Start-Process -FilePath "msiexec.exe" -ArgumentList "/i `"$webRTCPath`" /quiet /norestart /log webrtc.log" -Wait
+
+            # Instalar WebView2 Runtime
+            Write-Host "Installing Edge WebView2 Runtime..."
+            $webviewInstaller = Join-Path $tempFolder "WebView2Installer.exe"
+            Safe-DownloadFile -url "https://go.microsoft.com/fwlink/p/?LinkId=2124703" -destination $webviewInstaller
+            Start-Process -FilePath $webviewInstaller -ArgumentList "/silent /install" -NoNewWindow -Wait
+
+            # Instalar Teams 2.0 via Bootstrapper
+            Write-Host "Installing Teams 2.0..."
+            $teamsBootstrapperPath = Join-Path $tempFolder "TeamsBootstrapper.exe"
+            Safe-DownloadFile -url $TeamsBootStrapperUrl -destination $teamsBootstrapperPath
+            Start-Process -FilePath $teamsBootstrapperPath -ArgumentList "-p" -NoNewWindow -Wait
+
+            Write-Host "*** Teams Optimization Completed Successfully! ***"
+        }
+        catch {
+            Write-Host "*** Exception during Teams Optimization: [$($_.Exception.Message)] ***"
+        }
+    }
+
+    End {
+        # Cleanup
+        if (Test-Path $templateFilePathFolder) {
+            Remove-Item -Path $templateFilePathFolder -Recurse -Force -ErrorAction SilentlyContinue
+        }
+        if (Test-Path $tempFolder) {
+            Remove-Item -Path $tempFolder -Recurse -Force -ErrorAction SilentlyContinue
+        }
+
+        $stopwatch.Stop()
+        $elapsedTime = $stopwatch.Elapsed
+        Write-Host "*** Ending Teams Optimization - Time taken: $elapsedTime ***"
+    }
+}
+
+# Executar a função principal
+InstallTeamsOptimizationforAVD -VCRedistributableLink $VCRedistributableLink -WebRTCInstaller $WebRTCInstaller -TeamsBootStrapperUrl $TeamsBootStrapperUrl
+
+#############
+#    END    #
+#############
